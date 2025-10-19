@@ -569,7 +569,7 @@ def write_chart(fig: go.Figure, filename: str, *, transparent: bool = False) -> 
 
 
 def build_dashboard(components: Sequence[Dict[str, object]]) -> None:
-    dashboard_path = OUTPUT_DIR / "dashboard.html"
+    dashboard_path = OUTPUT_DIR / "index.html"
     section_html: List[str] = []
     for comp in components:
         title = comp.get("title")
