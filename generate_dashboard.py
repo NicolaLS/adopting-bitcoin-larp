@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from pathlib import Path
+import textwrap
 from typing import Dict, List, Sequence
 
 import pandas as pd
@@ -15,6 +17,7 @@ OVERVIEW_PATH = ROOT / "conferences_overview.csv"
 DETAIL_PATH = ROOT / "absv2024_stats_detail.csv"
 OUTPUT_DIR = ROOT / "build"
 OUTPUT_DIR.mkdir(exist_ok=True)
+RES_DIR = ROOT / "res"
 
 BRAND_FONT = "Poppins, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 BRAND_BACKGROUND = "#05051f"
@@ -45,9 +48,10 @@ PAGE_GRADIENT_CSS = (
 LIGHTNING_STORY_HTML = """
 <div class="story-block">
     <h3>Every corner buzzed with Lightning.</h3>
-    <p>We invite every attendee to tap lightning from the moment they land in San Salvador. The conference village is packed with food and beverage vendors running on sats, letting lunch, coffee, and late-night snacks settle instantly via bitcoin.</p>
-    <p>Art lovers made history again: more than 1 BTC worth of original pieces left the gallery floor, proving that culture trades hands faster when artists and collectors share a lightning wallet.</p>
-    <p>Competitors queued up for ChainDuel, chasing bragging rights with rapid-fire micropayments, while poker tables and even the tattoo chair were powered by the same rails. Lightning wasn’t confined to the venue either&mdash;afterparties and pop-up spots across the city embraced it. It’s bitcoin country here, and the network never sleeps.</p>
+    <p>We encourage every attendee to tap lightning from the moment they set foot in El Salvador. The conference venue is packed with food and beverage vendors running on sats, letting lunch and coffee settle instantly via bitcoin.</p>
+    <p>When the daytime programming wraps, afterparties keep the tabs open in sats so cocktails and late-night snacks ride the same rails.</p>
+    <p>Art lovers made history: more than 1 BTC worth of original pieces left the gallery floor, proving that culture trades hands faster when artists and collectors share a lightning wallet.</p>
+    <p>ChainDuel battles triggered a stream of lightning wagers, the poker tables ran on the same rails, and there was even a tattoo artist inking designs for sats. It’s bitcoin country here, and the network never sleeps.</p>
 </div>
 """
 
@@ -55,8 +59,8 @@ LIGHTNING_STORY_HTML = """
 TRANSACTION_STORY_HTML = """
 <div class="story-block">
     <h3>Transactions are the mission.</h3>
-    <p>We design every touchpoint to reward lightning usage, and it shows: 2,969 payments zipped across Adopting Bitcoin 2024 because spending sats is the default here.</p>
-    <p>Food and merch partners racked up 1,761 checkouts, afterparties added 1,027 joyful taps, and 105 ChainDuel battles kept the friendly competition electric&mdash;proof that incentives and playful prompts get wallets buzzing.</p>
+    <p>We design every touchpoint to reward lightning usage, and it shows: 2,969 payments lit up Adopting Bitcoin 2024 because spending sats is the default here.</p>
+    <p>Food and merch partners racked up 1,761 checkouts, afterparties added 1,027 joyful taps, and ChainDuel matches alone fired off 105 lightning transactions&mdash;proof that incentives and playful prompts get wallets buzzing.</p>
     <p>We’re proud to stand shoulder to shoulder with fellow conferences: our 2.47 tx per attendee outruns BTC Prague (0.73) and even the massive Bitcoin 2024 (0.04), while the data nudges us to learn from high-intent gatherings like Bitcoin Freedom Festival’s 14.48 tx-per-guest playbook so we can keep raising the bar next year.</p>
 </div>
 """.strip()
@@ -64,34 +68,49 @@ TRANSACTION_STORY_HTML = """
 
 KPI_CARD_STYLE = """
 .kpi-card {
+    position: relative;
     width: 100%;
-    min-height: 140px;
+    min-height: 160px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    gap: 10px;
-    padding: 14px 18px;
-    border-radius: 18px;
-    background: linear-gradient(160deg, rgba(14, 16, 48, 0.92), rgba(6, 7, 28, 0.6));
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: inset 0 0 0 1px rgba(238, 219, 95, 0.06);
+    gap: 16px;
+    padding: 22px 26px 20px;
+    border-radius: 22px;
+    background: rgba(11, 14, 42, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 22px 45px rgba(4, 5, 22, 0.45);
+    overflow: hidden;
+}
+.kpi-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(135deg, rgba(238, 219, 95, 0.35), rgba(255, 88, 167, 0.08) 45%, transparent 85%);
+    pointer-events: none;
+}
+.kpi-card > * {
+    position: relative;
+    z-index: 1;
 }
 .kpi-label {
     text-transform: uppercase;
-    letter-spacing: 0.18em;
+    letter-spacing: 0.24em;
     font-size: 0.72rem;
-    color: var(--accent, #EEDB5F);
+    font-weight: 600;
+    color: rgba(238, 219, 95, 0.9);
 }
 .kpi-value {
-    font-size: 2.45rem;
+    font-size: 2.7rem;
     font-weight: 600;
-    line-height: 1.1;
-    color: #f1f3ff;
+    line-height: 1.05;
+    color: #fdfdff;
+    text-shadow: 0 6px 22px rgba(4, 0, 255, 0.22);
 }
 .kpi-footnote {
-    font-size: 0.9rem;
-    color: var(--muted, #9ca3e1);
-    opacity: 0.9;
+    font-size: 0.95rem;
+    color: rgba(156, 163, 225, 0.92);
 }
 """.strip()
 
@@ -141,6 +160,13 @@ def parse_numeric(series: pd.Series) -> pd.Series:
     cleaned = cleaned.str.replace("\"", "", regex=False)
     cleaned = cleaned.replace({"": None, "nan": None, "None": None})
     return pd.to_numeric(cleaned, errors="coerce")
+
+
+def wrap_title(text: str, width: int = 28) -> str:
+    if not text:
+        return text
+    lines = textwrap.wrap(text, width, break_long_words=False)
+    return "<br>".join(lines)
 
 
 def format_compact(value: float | int, decimals: int = 1) -> str:
@@ -342,7 +368,27 @@ def create_ab24_sankey(detail_df: pd.DataFrame) -> go.Figure:
     value = [max(v, 0.0) for _, _, v in flows]
 
     palette = BRAND_COLORWAY
-    node_colors = [BRAND_ACCENT] + [palette[idx % len(palette)] for idx in range(len(category_order))]
+    gradient_start = BRAND_MAGENTA
+    gradient_end = BRAND_ELECTRIC
+    right_colors: List[str] = []
+    num_categories = len(category_order)
+    for idx in range(num_categories):
+        if num_categories <= 1:
+            t = 0.0
+        else:
+            t = idx / (num_categories - 1)
+        start_r = int(gradient_start[1:3], 16)
+        start_g = int(gradient_start[3:5], 16)
+        start_b = int(gradient_start[5:7], 16)
+        end_r = int(gradient_end[1:3], 16)
+        end_g = int(gradient_end[3:5], 16)
+        end_b = int(gradient_end[5:7], 16)
+        r = round(start_r + (end_r - start_r) * t)
+        g = round(start_g + (end_g - start_g) * t)
+        b = round(start_b + (end_b - start_b) * t)
+        right_colors.append(f"#{r:02X}{g:02X}{b:02X}")
+
+    node_colors = [BRAND_ACCENT] + right_colors
 
     root_x, root_y = 0.02, 0.5
     category_x = 0.97
@@ -366,7 +412,7 @@ def create_ab24_sankey(detail_df: pd.DataFrame) -> go.Figure:
             node=dict(
                 pad=20,
                 thickness=20,
-                label=sankey_nodes,
+                label=[""] + category_order,
                 color=node_colors,
                 line=dict(color=BRAND_BACKGROUND, width=1),
                 x=node_x_positions,
@@ -384,10 +430,10 @@ def create_ab24_sankey(detail_df: pd.DataFrame) -> go.Figure:
     )
     total_volume_btc = detail_df["VolumeBTC"].sum()
     fig.update_layout(
-        title=f"How {total_volume_btc:.2f} BTC moved at Adopting Bitcoin 2024",
+        title="",
         template=BRAND_TEMPLATE,
         height=620,
-        margin=dict(t=40, l=10, r=10, b=30),
+        margin=dict(t=48, l=16, r=16, b=36),
         paper_bgcolor=BRAND_PANEL,
     )
     return fig
@@ -406,7 +452,7 @@ def prepare_comparison_df(overview_df: pd.DataFrame) -> pd.DataFrame:
     return latest
 
 
-def create_transactions_bar_fig(df: pd.DataFrame) -> go.Figure:
+def create_transactions_bar_fig(df: pd.DataFrame, *, show_labels: bool = True) -> go.Figure:
     plot_df = df.sort_values("Transactions", ascending=True).copy()
     plot_df["Color"] = plot_df["IsABSS2024"].map({True: BRAND_ACCENT, False: BRAND_MAGENTA})
     plot_df["BarLabel"] = plot_df["Event"]
@@ -428,18 +474,21 @@ def create_transactions_bar_fig(df: pd.DataFrame) -> go.Figure:
             )
         )
 
-    fig.update_traces(textfont=dict(color=BRAND_TEXT))
+    fig.update_traces(textfont=dict(color=BRAND_TEXT), cliponaxis=False)
+    left_margin = 80 if show_labels else 40
+    yaxis_config = dict(automargin=True, ticklabelstandoff=12)
+    if not show_labels:
+        yaxis_config.update(showticklabels=False)
+
     fig.update_layout(
-        title="Transactions at Bitcoin Conferences",
+        title="",
         template=BRAND_TEMPLATE,
         height=540,
-        margin=dict(t=100, l=220, r=60, b=60),
+        margin=dict(t=100, l=left_margin, r=32, b=60),
         paper_bgcolor=BRAND_PANEL,
         xaxis_title="Transactions",
-    )
-    fig.update_layout(
         showlegend=False,
-        yaxis=dict(automargin=True, ticklabelstandoff=12),
+        yaxis=yaxis_config,
     )
     return fig
 
@@ -463,12 +512,12 @@ def create_peer_scatter_fig(df: pd.DataFrame) -> go.Figure:
         size_max=55,
         color_discrete_map={
             "Adopting Bitcoin 2024": BRAND_ACCENT,
-            "Peer conference": BRAND_ELECTRIC,
+            "Peer conference": BRAND_MAGENTA,
         },
     )
     fig.update_traces(marker=dict(line=dict(width=1, color=BRAND_BACKGROUND)))
     fig.update_layout(
-        title="Lightning Throughput",
+        title="",
         template=BRAND_TEMPLATE,
         height=540,
         margin=dict(t=100, l=80, r=60, b=80),
@@ -517,7 +566,7 @@ def create_on_off_site_split(detail_df: pd.DataFrame) -> go.Figure:
         barmode="stack",
         color_discrete_map={"On-site": BRAND_ACCENT, "Off-site": BRAND_MAGENTA},
     )
-    fig.update_traces(texttemplate="%{y:.1f}%", textposition="inside", textfont=dict(color=BRAND_BACKGROUND))
+    fig.update_traces(text=None)
     for trace in fig.data:
         mask = plot_df["Location"] == trace.name
         ordered = plot_df.loc[mask].sort_values("MetricLabel")
@@ -525,11 +574,10 @@ def create_on_off_site_split(detail_df: pd.DataFrame) -> go.Figure:
         trace.hovertemplate = "%{x}<br>%{customdata}<br>%{y:.1f}% share<extra></extra>"
 
     fig.update_layout(
-        title="Where lightning usage happened",
-        title_font=dict(color=BRAND_TEXT),
+        title="",
         template=BRAND_TEMPLATE,
         height=430,
-        margin=dict(t=100, l=80, r=60, b=80),
+        margin=dict(t=100, l=60, r=40, b=70),
         paper_bgcolor=BRAND_PANEL,
         font=dict(color=BRAND_TEXT),
         xaxis_title="",
@@ -566,6 +614,14 @@ def write_chart(fig: go.Figure, filename: str, *, transparent: bool = False) -> 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.write_html(output_path, include_plotlyjs="cdn", full_html=True)
     return fig.to_html(full_html=False, include_plotlyjs=False)
+
+
+def copy_static_assets() -> None:
+    if RES_DIR.exists():
+        target = OUTPUT_DIR / "res"
+        if target.exists():
+            shutil.rmtree(target)
+        shutil.copytree(RES_DIR, target)
 
 
 def build_dashboard(components: Sequence[Dict[str, object]]) -> None:
@@ -692,7 +748,9 @@ def build_dashboard(components: Sequence[Dict[str, object]]) -> None:
             }}
             main {{
                 display: grid;
-                gap: 28px;
+                grid-auto-flow: row;
+                row-gap: 92px;
+                column-gap: 32px;
                 grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
             }}
             section.card {{
@@ -705,6 +763,7 @@ def build_dashboard(components: Sequence[Dict[str, object]]) -> None:
                 display: flex;
                 flex-direction: column;
                 gap: 16px;
+                overflow: visible;
             }}
             section.card h2 {{
                 font-size: 1.18rem;
@@ -729,8 +788,9 @@ def build_dashboard(components: Sequence[Dict[str, object]]) -> None:
                 padding: 0;
             }}
             section.card.no-chrome h2 {{
-                color: var(--accent);
+                color: var(--text);
                 font-size: 1.05rem;
+                margin-bottom: 12px;
             }}
             section.card.no-chrome .embed {{
                 border-radius: 0;
@@ -759,6 +819,21 @@ def build_dashboard(components: Sequence[Dict[str, object]]) -> None:
             section.card.span-2 {{
                 grid-column: span 2;
             }}
+            .card.hide-sm {{
+                display: flex;
+            }}
+            .card.show-sm {{
+                display: none;
+            }}
+            .card.md-full {{
+                /* defaults maintain auto layout */
+            }}
+            .card.md-half {{
+                /* defaults maintain auto layout */
+            }}
+            .card.md-span-1 {{
+                /* defaults maintain auto layout */
+            }}
             .story-block {{
                 background: rgba(14, 16, 48, 0.82);
                 border-radius: 24px;
@@ -780,8 +855,11 @@ def build_dashboard(components: Sequence[Dict[str, object]]) -> None:
                 line-height: 1.6;
             }}
             section.card.is-kpi {{
-                padding: 20px;
-                min-height: 180px;
+                background: transparent;
+                border: none;
+                box-shadow: none;
+                padding: 0;
+                min-height: unset;
             }}
             section.card.is-kpi h2 {{
                 font-size: 1rem;
@@ -790,10 +868,15 @@ def build_dashboard(components: Sequence[Dict[str, object]]) -> None:
                 text-transform: uppercase;
             }}
             section.card.is-kpi .embed {{
-                align-items: center;
+                align-items: stretch;
             }}
             section.card.is-kpi .embed > div {{
                 display: flex;
+                width: 100%;
+            }}
+            .plotly .modebar {{
+                top: 12px;
+                right: 12px;
             }}
             {kpi_style_block}
             footer {{
@@ -807,6 +890,25 @@ def build_dashboard(components: Sequence[Dict[str, object]]) -> None:
             footer a {{
                 color: var(--accent);
                 text-decoration: none;
+            }}
+            @media (max-width: 1100px) {{
+                main {{
+                    row-gap: 72px;
+                }}
+            }}
+            @media (min-width: 721px) and (max-width: 900px) {{
+                .card.md-half {{
+                    grid-column: span 1;
+                }}
+                .card.md-full {{
+                    grid-column: 1 / -1;
+                }}
+                .card.md-span-1, section.card.md-span-1 {{
+                    grid-column: 1 / -1;
+                }}
+                .card.md-span-2 {{
+                    grid-column: span 2;
+                }}
             }}
             @media (max-width: 900px) {{
                 header.page-header {{
@@ -824,12 +926,27 @@ def build_dashboard(components: Sequence[Dict[str, object]]) -> None:
                     text-align: center;
                 }}
                 main {{
-                    grid-template-columns: 1fr;
+                    row-gap: 56px;
+                    grid-template-columns: repeat(2, minmax(280px, 1fr));
+                }}
+                .card.md-half {{
+                    grid-column: span 1;
+                }}
+                .card.md-full {{
+                    grid-column: 1 / -1;
+                }}
+                .card.md-span-1, section.card.md-span-1 {{
+                    grid-column: 1 / -1;
+                }}
+                .card.md-span-2 {{
+                    grid-column: span 2;
                 }}
             }}
-            @media (max-width: 600px) {{
+            @media (max-width: 720px) {{
                 main {{
                     grid-template-columns: repeat(2, minmax(0, 1fr));
+                    column-gap: 18px;
+                    row-gap: 40px;
                 }}
                 section.card {{
                     grid-column: 1 / -1;
@@ -840,6 +957,57 @@ def build_dashboard(components: Sequence[Dict[str, object]]) -> None:
                 section.card.sm-half {{
                     grid-column: span 1;
                 }}
+                section.card.is-kpi {{
+                    margin: 0;
+                }}
+                .plotly .modebar {{
+                    top: 8px;
+                    right: 8px;
+                    transform: scale(0.85);
+                    transform-origin: top right;
+                }}
+                .card.md-half {{
+                    grid-column: span 1;
+                }}
+                .card.md-full {{
+                    grid-column: 1 / -1;
+                }}
+                .card.md-span-1 {{
+                    grid-column: 1 / -1;
+                }}
+                section.card.md-span-1 {{
+                    grid-column: 1 / -1;
+                }}
+                .card.md-span-2 {{
+                    grid-column: span 2;
+                }}
+                .card.hide-sm {{
+                    display: none !important;
+                }}
+                .card.show-sm {{
+                    display: flex !important;
+                }}
+            }}
+            @media (max-width: 520px) {{
+                main {{
+                    grid-template-columns: 1fr;
+                    row-gap: 36px;
+                    column-gap: 0;
+                }}
+                section.card.sm-half {{
+                    grid-column: 1 / -1;
+                }}
+                .plotly .modebar {{
+                    top: 6px;
+                    right: 6px;
+                    transform: scale(0.8);
+                }}
+                .card.show-sm {{
+                    display: flex !important;
+                }}
+                .card.md-full {{
+                    grid-column: 1 / -1;
+                }}
             }}
         </style>
     </head>
@@ -847,7 +1015,7 @@ def build_dashboard(components: Sequence[Dict[str, object]]) -> None:
         <div class=\"page-shell\">
             <header class=\"page-header\">
                 <div class=\"logo-tile\">
-                    <img src=\"../res/main-logo-neon.png\" alt=\"Adopting Bitcoin\" />
+                    <img src=\"res/main-logo-neon.png\" alt=\"Adopting Bitcoin\" />
                 </div>
                 <div class=\"headline\">
                     <span class=\"eyebrow\">Lightning Adoption Report Perspective (LARP)</span>
@@ -890,61 +1058,67 @@ def main() -> None:
     venue_split_fig = create_on_off_site_split(activity_detail)
 
     comparison_df = prepare_comparison_df(overview_df)
-    tx_bar_fig = create_transactions_bar_fig(comparison_df)
+    tx_bar_fig = create_transactions_bar_fig(comparison_df, show_labels=True)
+    tx_bar_fig_compact = create_transactions_bar_fig(comparison_df, show_labels=False)
     scatter_fig = create_peer_scatter_fig(comparison_df)
 
     components: List[Dict[str, object]] = []
 
     for idx, kpi in enumerate(top_kpis):
         responsive_class = "sm-full" if idx == 0 else "sm-half"
+        md_class = "md-half" if idx in (0, 1) else ("md-full" if idx == 2 else "")
+        classes = " ".join(filter(None, ["is-kpi", responsive_class, md_class]))
         components.append(
             {
                 "title": kpi["title"],
                 "html": write_kpi_component(kpi),
-                "classes": f"is-kpi {responsive_class}",
+                "classes": classes,
             }
         )
 
     components.append(
         {
-            "title": "",
+            "title": "Lightning Flow Across Activities",
             "html": write_chart(sankey_fig, "ab24_sankey.html", transparent=True),
             "classes": "full-width no-chrome sm-full",
-            "show_title": False,
         }
     )
 
     components.append(
         {
-            "title": "",
+            "title": "Where Lightning Usage Happened",
             "html": write_chart(venue_split_fig, "ab24_venue_split.html", transparent=True),
-            "classes": "span-1 no-chrome sm-full",
-            "show_title": False,
+            "classes": "span-1 no-chrome sm-full md-span-1",
         }
     )
     components.append(
         {
             "title": "How attendees lit up the conference",
             "html": LIGHTNING_STORY_HTML,
-            "classes": "span-2 story-card no-chrome sm-full",
+            "classes": "span-2 story-card no-chrome sm-full md-span-1",
             "show_title": False,
         }
     )
 
     components.append(
         {
-            "title": "",
+            "title": "Transactions at Bitcoin Conferences",
             "html": write_chart(tx_bar_fig, "comparison_transactions.html", transparent=True),
-            "classes": "span-2 no-chrome sm-full",
-            "show_title": False,
+            "classes": "span-2 no-chrome sm-full md-span-1 hide-sm",
         }
     )
     components.append(
         {
-            "title": "",
+            "title": "Transactions at Bitcoin Conferences",
+            "html": write_chart(tx_bar_fig_compact, "comparison_transactions_compact.html", transparent=True),
+            "classes": "span-2 no-chrome sm-full show-sm",
+        }
+    )
+    components.append(
+        {
+            "title": "Lightning Throughput",
             "html": write_chart(scatter_fig, "comparison_scale_vs_throughput.html", transparent=True),
-            "classes": "span-1 no-chrome sm-full",
-            "show_title": False,
+            "classes": "span-1 no-chrome sm-full md-span-1",
         }
     )
 
@@ -982,6 +1156,7 @@ def main() -> None:
             }
         )
 
+    copy_static_assets()
     build_dashboard(components)
     print(json.dumps({"output_dir": str(OUTPUT_DIR)}))
 
